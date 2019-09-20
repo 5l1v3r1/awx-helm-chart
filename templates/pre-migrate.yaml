@@ -1,0 +1,97 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "awx.fullname" . }}-migrate
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "awx.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+    {{- with .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+
+      volumes:
+        - name: {{ include "awx.name" . }}-application-config
+          configMap:
+            name: {{ include "awx.fullname" . }}-config
+            items:
+              - key: awx_settings
+                path: settings.py
+
+        - name: {{ include "awx.name" . }}-application-credentials
+          configMap:
+            name: {{ include "awx.fullname" . }}-application-credentials
+            items:
+              - key: credentials_py
+                path: 'credentials.py'
+              - key: environment_sh
+                path: 'environment.sh'
+
+        - name: {{ include "awx.name" . }}-secret-key
+          secret:
+            secretName: {{ include "awx.fullname" . }}-secrets
+            items:
+              - key: secret_key
+                path: SECRET_KEY
+
+      containers:
+        - name: {{ include "awx.name" . }}-migrate
+          securityContext:
+            privileged: false
+          image: {{ .Values.task.image.repository }}:{{ .Values.task.image.tag }}
+          imagePullPolicy: {{ .Values.task.image.pullPolicy }}
+          command: ['sh', '-c', 'awx-manage migrate --noinput']
+
+          volumeMounts:
+            - name: {{ include "awx.name" . }}-application-config
+              mountPath: "/etc/tower/settings.py"
+              subPath: settings.py
+              readOnly: true
+
+            - name: {{ include "awx.name" . }}-application-credentials
+              mountPath: "/etc/tower/conf.d/"
+              readOnly: true
+
+            - name: {{ include "awx.name" . }}-secret-key
+              mountPath: "/etc/tower/SECRET_KEY"
+              subPath: SECRET_KEY
+              readOnly: true
+          env:
+            - name: AWX_SKIP_MIGRATIONS
+              value: "1"
+          resources:
+{{- if or .Values.task.mem_request .Values.task.cpu_request }}
+            requests:
+{{- end }}
+{{- if .Values.task.mem_request }}
+              memory: {{ .Values.task.mem_request }}
+{{- end }}
+{{- if .Values.task.cpu_request }}
+              cpu: {{ .Values.task.cpu_request }}
+{{- end }}
+{{- if or .Values.task.mem_limit .Values.task.cpu_limit }}
+            limits:
+{{- end }}
+{{- if .Values.task.mem_limit }}
+              memory: {{ .Values.task.mem_limit }}
+{{- end }}
+{{- if .Values.task.cpu_limit }}
+              cpu: {{ .Values.task.cpu_limit }}
+{{- end }}

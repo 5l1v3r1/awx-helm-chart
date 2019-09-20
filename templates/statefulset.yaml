@@ -1,0 +1,234 @@
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: {{ include "awx.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "awx.labels" . | indent 4 }}
+spec:
+  serviceName: {{ include "awx.fullname" . }}
+  replicas: {{ .Values.replicaCount }}
+  template:
+    metadata:
+      labels:
+        name: {{ include "awx.name" . }}-web-deploy
+        service: django
+        app: {{ include "awx.name" . }}
+    spec:
+      serviceAccountName: {{ include "awx.fullname" . }}
+      terminationGracePeriodSeconds: 10
+    {{- with .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+
+      containers:
+        - name: {{ include "awx.name" . }}-web
+          image: {{ .Values.web.image.repository }}:{{ .Values.web.image.tag }}
+          imagePullPolicy: {{ .Values.web.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8052
+              protocol: TCP
+          volumeMounts:
+            - name: {{ include "awx.name" . }}-application-config
+              mountPath: "/etc/tower/settings.py"
+              subPath: settings.py
+              readOnly: true
+
+            - name: {{ include "awx.name" . }}-application-credentials
+              mountPath: "/etc/tower/conf.d/"
+              readOnly: true
+
+            - name: {{ include "awx.name" . }}-secret-key
+              mountPath: "/etc/tower/SECRET_KEY"
+              subPath: SECRET_KEY
+              readOnly: true
+          resources:
+{{- if or .Values.web.mem_request .Values.web.cpu_request }}
+            requests:
+{{- end }}
+{{- if .Values.web.mem_request }}
+              memory: {{ .Values.web.mem_request }}
+{{- end }}
+{{- if .Values.web.cpu_request }}
+              cpu: {{ .Values.web.cpu_request }}
+{{- end }}
+{{- if or .Values.web.mem_limit .Values.web.cpu_limit }}
+            limits:
+{{- end }}
+{{- if .Values.web.mem_limit }}
+              memory: {{ .Values.web.mem_limit }}
+{{- end }}
+{{- if .Values.web.cpu_limit }}
+              cpu: {{ .Values.web.cpu_limit }}
+{{- end }}
+
+        - name: {{ include "awx.name" . }}-task
+          securityContext:
+            privileged: true
+          image: {{ .Values.task.image.repository }}:{{ .Values.task.image.tag }}
+          imagePullPolicy: {{ .Values.task.image.pullPolicy }}
+          command:
+            - /usr/bin/launch_awx_task.sh
+          volumeMounts:
+            - name: {{ include "awx.name" . }}-application-config
+              mountPath: "/etc/tower/settings.py"
+              subPath: settings.py
+              readOnly: true
+
+            - name: {{ include "awx.name" . }}-application-credentials
+              mountPath: "/etc/tower/conf.d/"
+              readOnly: true
+
+            - name: {{ include "awx.name" . }}-secret-key
+              mountPath: "/etc/tower/SECRET_KEY"
+              subPath: SECRET_KEY
+              readOnly: true
+          env:
+            - name: AWX_SKIP_MIGRATIONS
+              value: "1"
+          resources:
+{{- if or .Values.task.mem_request .Values.task.cpu_request }}
+            requests:
+{{- end }}
+{{- if .Values.task.mem_request }}
+              memory: {{ .Values.task.mem_request }}
+{{- end }}
+{{- if .Values.task.cpu_request }}
+              cpu: {{ .Values.task.cpu_request }}
+{{- end }}
+{{- if or .Values.task.mem_limit .Values.task.cpu_limit }}
+            limits:
+{{- end }}
+{{- if .Values.task.mem_limit }}
+              memory: {{ .Values.task.mem_limit }}
+{{- end }}
+{{- if .Values.task.cpu_limit }}
+              cpu: {{ .Values.task.cpu_limit }}
+{{- end }}
+
+        - name: {{ include "awx.name" . }}-rabbitmq
+          image: {{ .Values.rabbitmq.image.repository }}:{{ .Values.rabbitmq.image.tag }}
+          imagePullPolicy: {{ .Values.rabbitmq.image.pullPolicy }}
+          ports:
+            - name: http
+              protocol: TCP
+              containerPort: 15672
+            - name: amqp
+              protocol: TCP
+              containerPort: 5672
+          livenessProbe:
+            exec:
+              command: ["rabbitmqctl", "status"]
+            initialDelaySeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["rabbitmqctl", "status"]
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+          env:
+            - name: MY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: RABBITMQ_USE_LONGNAME
+              value: "true"
+            - name: RABBITMQ_NODENAME
+              value: "rabbit@$(MY_POD_IP)"
+            - name: RABBITMQ_ERLANG_COOKIE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "awx.fullname" . }}-secrets
+                  key: rabbitmq_erlang_cookie
+            - name: K8S_SERVICE_NAME
+              value: {{ include "awx.fullname" . }}-rabbitmq
+          volumeMounts:
+            - name: {{ include "awx.name" . }}-rabbitmq-config
+              mountPath: /etc/rabbitmq
+          resources:
+{{- if or .Values.rabbitmq.mem_request .Values.rabbitmq.cpu_request }}
+            requests:
+{{- end }}
+{{- if .Values.rabbitmq.mem_request }}
+              memory: {{ .Values.rabbitmq.mem_request }}
+{{- end }}
+{{- if .Values.rabbitmq.cpu_request }}
+              cpu: {{ .Values.rabbitmq.cpu_request }}
+{{- end }}
+{{- if or .Values.rabbitmq.mem_limit .Values.rabbitmq.cpu_limit }}
+            limits:
+{{- end }}
+{{- if .Values.rabbitmq.mem_limit }}
+              memory: {{ .Values.rabbitmq.mem_limit }}
+{{- end }}
+{{- if .Values.rabbitmq.cpu_limit }}
+              cpu: {{ .Values.rabbitmq.cpu_limit }}
+{{- end }}
+
+        - name: {{ include "awx.name" . }}-memcached
+          image: {{ .Values.memcached.image.repository }}:{{ .Values.memcached.image.tag }}
+          imagePullPolicy: {{ .Values.memcached.image.pullPolicy }}
+      volumes:
+        - name: {{ include "awx.name" . }}-application-config
+          configMap:
+            name: {{ include "awx.fullname" . }}-config
+            items:
+              - key: awx_settings
+                path: settings.py
+
+        - name: {{ include "awx.name" . }}-application-credentials
+          configMap:
+            name: {{ include "awx.fullname" . }}-application-credentials
+            items:
+              - key: credentials_py
+                path: 'credentials.py'
+              - key: environment_sh
+                path: 'environment.sh'
+
+        - name: {{ include "awx.name" . }}-secret-key
+          secret:
+            secretName: {{ include "awx.fullname" . }}-secrets
+            items:
+              - key: secret_key
+                path: SECRET_KEY
+
+        - name: {{ include "awx.name" . }}-rabbitmq-config
+          configMap:
+            name: {{ include "awx.fullname" . }}-rabbitmq-config
+            items:
+            - key: rabbitmq.conf
+              path: rabbitmq.conf
+            - key: enabled_plugins
+              path: enabled_plugins
+            - key: rabbitmq_definitions.json
+              path: rabbitmq_definitions.json
+          resources:
+{{- if or .Values.memcached.mem_request .Values.memcached.cpu_request }}
+            requests:
+{{- end }}
+{{- if .Values.memcached.mem_request }}
+              memory: {{ .Values.memcached.mem_request }}
+{{- end }}
+{{- if .Values.memcached.cpu_request }}
+              cpu: {{ .Values.memcached.cpu_request }}
+{{- end }}
+{{- if or .Values.memcached.mem_limit .Values.memcached.cpu_limit }}
+            limits:
+{{- end }}
+{{- if .Values.memcached.mem_limit }}
+              memory: {{ .Values.memcached.mem_limit }}
+{{- end }}
+{{- if .Values.memcached.cpu_limit }}
+              cpu: {{ .Values.memcached.cpu_limit }}
+{{- end }}
+

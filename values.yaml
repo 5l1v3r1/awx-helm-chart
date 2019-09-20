@@ -1,0 +1,93 @@
+replicaCount: 1
+
+web:
+  image:
+    repository: ansible/awx_web
+    tag: 7.0.0
+    pullPolicy: IfNotPresent
+  # mem_request: 1000Mi
+  # cpu_request: 500m
+  # mem_limit: 2000Mi
+  # cpu_limit: 1000m
+
+task:
+  image:
+    repository: ansible/awx_task
+    tag: 7.0.0
+    pullPolicy: IfNotPresent
+  # mem_request: 2000Mi
+  # cpu_request: 1500m
+  # mem_limit: 4000Mi
+  # cpu_limit: 2000m
+
+rabbitmq:
+  image:
+    repository: ansible/awx_rabbitmq
+    tag: 3.7.4
+    pullPolicy: IfNotPresent
+  hostname: localhost
+  port: 5672
+  username: awx
+  password: awxpass
+  erlang_cookie: cookiemonster
+  # mem_request: 2000Mi
+  # cpu_request: 500m
+  # mem_limit: 3000Mi
+  # cpu_limit: 1000m
+
+memcached:
+  image:
+    repository: memcached
+    tag: 1.5.17
+    pullPolicy: IfNotPresent
+  hostname: localhost
+  port: 11211
+  # mem_request: 1000Mi
+  # cpu_request: 500m
+  # mem_limit: 2000Mi
+  # cpu_limit: 1000m
+
+## This Helm chart doesn't create a PostgreSQL instance. The deployment will
+## fail if one isn't provided.
+postgres:
+  hostname: postgres
+  username: awx
+  password: awxpass
+  database: awx
+  port: 5432
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+secret_key: awxsecret
+
+admin_user: admin
+admin_password: password
+
+# insights_url_base: "https://example.org"
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  labels: {}
+  hosts:
+    - host: chart-example.local
+      paths: []
+
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
